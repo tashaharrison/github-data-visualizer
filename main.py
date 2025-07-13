@@ -21,7 +21,7 @@ sys.path.append(str(Path(__file__).parent / "src"))
 
 from config.settings import settings
 from src.agent.github_agent import GitHubPRAnalyzerAgent
-from src.utils.helpers import setup_logging
+from src.utils import setup_logging
 
 
 async def main():

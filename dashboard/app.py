@@ -278,15 +278,15 @@ def view_insight(filename):
     insight = next((i for i in insights if i["filename"] == filename), None)
     
     if not insight:
-        return "Insight file not found", 404
+        return "Insight not found", 404
     
     try:
         with open(insight["filepath"], 'r') as f:
             content = f.read()
+        return render_template('insight.html', insight=insight, content=content)
     except Exception as e:
-        content = f"Error reading file: {e}"
-    
-    return render_template('insight.html', insight=insight, content=content)
+        logger.error(f"Error reading insight {filename}: {e}")
+        return f"Error reading insight: {e}", 500
 
 
 @app.route('/api/charts/<filename>')
@@ -430,62 +430,6 @@ def health_check():
         "reports_count": len(dashboard_data.get_available_reports()),
         "visualizations_count": len(dashboard_data.get_visualizations())
     })
-
-
-@app.route('/api/test-chart')
-def test_chart():
-    """Test chart generation with sample data."""
-    try:
-        import plotly.graph_objs as go
-        
-        # Create a simple test chart
-        fig = go.Figure(data=[
-            go.Bar(x=['Jan', 'Feb', 'Mar'], y=[10, 20, 15], name="Test Data")
-        ])
-        fig.update_layout(
-            title="Test Chart",
-            xaxis_title="Month",
-            yaxis_title="Value",
-            template="plotly_white"
-        )
-        
-        chart_data = json.loads(fig.to_json())
-        logger.info("Test chart generated successfully")
-        return jsonify({"test_chart": chart_data})
-        
-    except Exception as e:
-        logger.error(f"Error generating test chart: {e}")
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route('/test')
-def test_page():
-    """Test page for debugging charts."""
-    return render_template('test.html')
-
-
-@app.route('/test-file/<filename>')
-def test_file(filename):
-    """Test file serving."""
-    dashboard_static_path = Path(settings.dashboard_static_dir)
-    reports_path = Path(settings.output_dir)
-    
-    logger.info(f"Testing file: {filename}")
-    logger.info(f"Dashboard static path: {dashboard_static_path}")
-    logger.info(f"Reports path: {reports_path}")
-    
-    dashboard_file = dashboard_static_path / filename
-    reports_file = reports_path / filename
-    
-    logger.info(f"Dashboard file exists: {dashboard_file.exists()}")
-    logger.info(f"Reports file exists: {reports_file.exists()}")
-    
-    if dashboard_file.exists():
-        return f"File exists in dashboard static: {dashboard_file}"
-    elif reports_file.exists():
-        return f"File exists in reports: {reports_file}"
-    else:
-        return f"File not found: {filename}"
 
 
 if __name__ == '__main__':

@@ -8,7 +8,7 @@ from typing import Dict, List, Any, Tuple
 from loguru import logger
 
 from src.analysis.pr_analyzer import PRAnalyzer
-from src.utils.helpers import parse_github_date
+from src.utils import parse_github_date
 
 
 class MultiRepoAnalyzer:

@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Dict, List, Any, Tuple
 from loguru import logger
 
-from src.utils.helpers import group_by_month, calculate_monthly_stats, parse_github_date
+from src.utils import group_by_month, calculate_monthly_stats, parse_github_date
 
 
 class PRAnalyzer:
