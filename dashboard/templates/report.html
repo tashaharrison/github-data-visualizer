@@ -1,0 +1,706 @@
+{% extends "base.html" %}
+
+{% block title %}{{ report.title }} - GitHub PR Analytics{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Report Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{{ url_for('index') }}">Dashboard</a></li>
+                    <li class="breadcrumb-item active">{{ report.title }}</li>
+                </ol>
+            </nav>
+            
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h2 class="mb-0">
+                        <i class="fas fa-file-alt me-2"></i>
+                        {{ report.title }}
+                    </h2>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p><strong>Type:</strong> {{ report.type }}</p>
+                            <p><strong>Generated:</strong> {{ report.generated_at[:19] if report.generated_at else 'N/A' }}</p>
+                        </div>
+                        <div class="col-md-6 text-end">
+                            <button class="btn btn-outline-primary" onclick="loadCharts('{{ report.filename }}')">
+                                <i class="fas fa-chart-line me-1"></i>Interactive Charts
+                            </button>
+                            <button class="btn btn-outline-secondary ms-2" onclick="exportData('report', '{{ report.filename }}')">
+                                <i class="fas fa-download me-1"></i>Export
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Report Content -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h3><i class="fas fa-chart-bar me-2"></i>Report Data</h3>
+                </div>
+                <div class="card-body">
+                    <div id="reportContent">
+                        <div class="text-center py-5">
+                            <div class="loading"></div>
+                            <p class="mt-3">Loading report data...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Modal -->
+<div class="modal fade" id="chartsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Interactive Charts - {{ report.title }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="chartsContainer"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Load report data
+    loadReportData();
+});
+
+function loadReportData() {
+    fetch('/api/report/{{ report.filename }}')
+        .then(response => response.json())
+        .then(data => {
+            displayReportData(data);
+        })
+        .catch(error => {
+            console.error('Error loading report data:', error);
+            document.getElementById('reportContent').innerHTML = `
+                <div class="text-center py-5">
+                    <i class="fas fa-exclamation-triangle text-warning display-4 mb-3"></i>
+                    <h5>Error Loading Report</h5>
+                    <p class="text-muted">Unable to load report data. Please try again.</p>
+                    <button class="btn btn-primary" onclick="loadReportData()">
+                        <i class="fas fa-redo me-1"></i>Retry
+                    </button>
+                </div>
+            `;
+        });
+}
+
+function displayReportData(data) {
+    const container = document.getElementById('reportContent');
+    
+    let html = '';
+    
+    // Check if this is a multi-repository analysis
+    const isMultiRepo = data.individual_analyses && Object.keys(data.individual_analyses).length > 0;
+    const repos = isMultiRepo ? Object.keys(data.individual_analyses) : [];
+    
+    // Summary section
+    if (isMultiRepo) {
+        // Multi-repository analysis
+        let totalPrs = data.summary ? data.summary.total_prs_across_repos : 0;
+        let totalRepos = data.summary ? data.summary.total_repositories : repos.length;
+        let totalMonths = 0;
+        let generatedAt = data.summary ? data.summary.generated_at : null;
+        
+        // Calculate max months from individual analyses
+        repos.forEach(repo => {
+            const repoData = data.individual_analyses[repo];
+            if (repoData.summary) {
+                totalMonths = Math.max(totalMonths, repoData.summary.months_analyzed || 0);
+            }
+        });
+        
+        html += `
+            <div class="mb-4">
+                <h4><i class="fas fa-info-circle me-2"></i>Multi-Repository Summary</h4>
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">${totalPrs}</h5>
+                                <p class="card-text">Total PRs</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">${totalRepos}</h5>
+                                <p class="card-text">Repositories</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">${totalMonths}</h5>
+                                <p class="card-text">Months Analyzed</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">${generatedAt ? generatedAt.substring(0, 10) : 'N/A'}</h5>
+                                <p class="card-text">Generated Date</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Add individual repository summaries
+        html += `
+            <div class="mb-4">
+                <h4><i class="fas fa-repo me-2"></i>Repository Details</h4>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Repository</th>
+                                <th>Total PRs</th>
+                                <th>Months Analyzed</th>
+                                <th>Analysis Period</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+        `;
+        
+        repos.forEach(repo => {
+            const repoData = data.individual_analyses[repo];
+            if (repoData.summary) {
+                html += `
+                    <tr>
+                        <td><strong>${repo}</strong></td>
+                        <td>${repoData.summary.total_prs || 0}</td>
+                        <td>${repoData.summary.months_analyzed || 0}</td>
+                        <td>${repoData.summary.analysis_period || 'N/A'}</td>
+                    </tr>
+                `;
+            }
+        });
+        
+        html += `
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    } else if (data.summary) {
+        // Single repository analysis
+        html += `
+            <div class="mb-4">
+                <h4><i class="fas fa-info-circle me-2"></i>Summary</h4>
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">${data.summary.total_prs || 0}</h5>
+                                <p class="card-text">Total PRs</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">${data.summary.months_analyzed || 0}</h5>
+                                <p class="card-text">Months Analyzed</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">${data.summary.analysis_period || 'N/A'}</h5>
+                                <p class="card-text">Analysis Period</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">${data.summary.generated_at ? data.summary.generated_at.substring(0, 10) : 'N/A'}</h5>
+                                <p class="card-text">Generated Date</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    // Overall stats section
+    if (data.overall_stats) {
+        // Single repository overall stats
+        html += `
+            <div class="mb-4">
+                <h4><i class="fas fa-chart-pie me-2"></i>Overall Statistics</h4>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <tbody>
+                            <tr><td>Total PRs</td><td>${data.overall_stats.total_prs || 0}</td></tr>
+                            <tr><td>Merge Rate</td><td>${(data.overall_stats.merge_rate || 0).toFixed(2)}%</td></tr>
+                            <tr><td>Average Comments</td><td>${(data.overall_stats.avg_comments || 0).toFixed(2)}</td></tr>
+                            <tr><td>Average Review Comments</td><td>${(data.overall_stats.avg_review_comments || 0).toFixed(2)}</td></tr>
+                            <tr><td>Average Commits</td><td>${(data.overall_stats.avg_commits || 0).toFixed(2)}</td></tr>
+                            <tr><td>Total Changes</td><td>${data.overall_stats.total_changes || 0}</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    } else if (isMultiRepo) {
+        // Multi-repository overall stats
+        html += `
+            <div class="mb-4">
+                <h4><i class="fas fa-chart-pie me-2"></i>Overall Statistics by Repository</h4>
+        `;
+        
+        repos.forEach(repo => {
+            const repoData = data.individual_analyses[repo];
+            if (repoData.overall_stats) {
+                html += `
+                    <h5 class="mt-3">${repo}</h5>
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <tbody>
+                                <tr><td>Total PRs</td><td>${repoData.overall_stats.total_prs || 0}</td></tr>
+                                <tr><td>Merge Rate</td><td>${(repoData.overall_stats.merge_rate || 0).toFixed(2)}%</td></tr>
+                                <tr><td>Average Comments</td><td>${(repoData.overall_stats.avg_comments || 0).toFixed(2)}</td></tr>
+                                <tr><td>Average Review Comments</td><td>${(repoData.overall_stats.avg_review_comments || 0).toFixed(2)}</td></tr>
+                                <tr><td>Average Commits</td><td>${(repoData.overall_stats.avg_commits || 0).toFixed(2)}</td></tr>
+                                <tr><td>Total Changes</td><td>${repoData.overall_stats.total_changes || 0}</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+        });
+        
+        html += `</div>`;
+    }
+    
+    // Monthly stats section
+    if (data.monthly_stats) {
+        // Single repository monthly stats
+        html += `
+            <div class="mb-4">
+                <h4><i class="fas fa-calendar me-2"></i>Monthly Statistics</h4>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Month</th>
+                                <th>PR Count</th>
+                                <th>Merged</th>
+                                <th>Open</th>
+                                <th>Closed</th>
+                                <th>Avg Comments</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+        `;
+        
+        Object.entries(data.monthly_stats).forEach(([month, stats]) => {
+            html += `
+                <tr>
+                    <td>${month}</td>
+                    <td>${stats.count || 0}</td>
+                    <td>${stats.merged_count || 0}</td>
+                    <td>${stats.open_count || 0}</td>
+                    <td>${stats.closed_count || 0}</td>
+                    <td>${(stats.avg_comments || 0).toFixed(2)}</td>
+                </tr>
+            `;
+        });
+        
+        html += `
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    } else if (isMultiRepo) {
+        // Multi-repository monthly stats
+        html += `
+            <div class="mb-4">
+                <h4><i class="fas fa-calendar me-2"></i>Combined Monthly Statistics</h4>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Month</th>
+                                <th>Total PRs</th>
+                                <th>Total Merged</th>
+                                <th>Total Open</th>
+                                <th>Total Closed</th>
+                                <th>Avg Time to Merge (h)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+        `;
+        
+        // Aggregate monthly data across all repositories
+        const combinedMonthlyStats = {};
+        
+        repos.forEach(repo => {
+            const repoData = data.individual_analyses[repo];
+            if (repoData.monthly_stats) {
+                Object.entries(repoData.monthly_stats).forEach(([month, stats]) => {
+                    if (!combinedMonthlyStats[month]) {
+                        combinedMonthlyStats[month] = {
+                            count: 0,
+                            merged_count: 0,
+                            open_count: 0,
+                            closed_count: 0,
+                            total_merge_time: 0,
+                            merged_prs_count: 0
+                        };
+                    }
+                    combinedMonthlyStats[month].count += stats.count || 0;
+                    combinedMonthlyStats[month].merged_count += stats.merged_count || 0;
+                    combinedMonthlyStats[month].open_count += stats.open_count || 0;
+                    combinedMonthlyStats[month].closed_count += stats.closed_count || 0;
+                    
+                    // Calculate merge time for this repo's monthly stats
+                    // We'll need to get this from the lifecycle data if available
+                    if (repoData.lifecycle_stats && repoData.lifecycle_stats.avg_time_to_merge) {
+                        const avgTimeToMerge = repoData.lifecycle_stats.avg_time_to_merge;
+                        const mergedCount = stats.merged_count || 0;
+                        combinedMonthlyStats[month].total_merge_time += avgTimeToMerge * mergedCount;
+                        combinedMonthlyStats[month].merged_prs_count += mergedCount;
+                    }
+                });
+            }
+        });
+        
+        // Display combined monthly stats
+        Object.entries(combinedMonthlyStats).forEach(([month, stats]) => {
+            const avgTimeToMerge = stats.merged_prs_count > 0 ? stats.total_merge_time / stats.merged_prs_count : 0;
+            html += `
+                <tr>
+                    <td>${month}</td>
+                    <td>${stats.count}</td>
+                    <td>${stats.merged_count}</td>
+                    <td>${stats.open_count}</td>
+                    <td>${stats.closed_count}</td>
+                    <td>${avgTimeToMerge.toFixed(2)}</td>
+                </tr>
+            `;
+        });
+        
+        html += `
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+        
+        // Individual repository monthly stats
+        html += `
+            <div class="mb-4">
+                <h4><i class="fas fa-calendar me-2"></i>Monthly Statistics by Repository</h4>
+        `;
+        
+        repos.forEach(repo => {
+            const repoData = data.individual_analyses[repo];
+            if (repoData.monthly_stats) {
+                html += `
+                    <h5 class="mt-3">${repo}</h5>
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Month</th>
+                                    <th>PR Count</th>
+                                    <th>Merged</th>
+                                    <th>Open</th>
+                                    <th>Closed</th>
+                                    <th>Avg Comments</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+                
+                Object.entries(repoData.monthly_stats).forEach(([month, stats]) => {
+                    html += `
+                        <tr>
+                            <td>${month}</td>
+                            <td>${stats.count || 0}</td>
+                            <td>${stats.merged_count || 0}</td>
+                            <td>${stats.open_count || 0}</td>
+                            <td>${stats.closed_count || 0}</td>
+                            <td>${(stats.avg_comments || 0).toFixed(2)}</td>
+                        </tr>
+                    `;
+                });
+                
+                html += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+        });
+        
+        html += `</div>`;
+    }
+    
+    // Comparative analysis section for multi-repo
+    if (isMultiRepo && data.comparative_analysis) {
+        html += `
+            <div class="mb-4">
+                <h4><i class="fas fa-chart-line me-2"></i>Comparative Analysis</h4>
+        `;
+        
+        if (data.comparative_analysis.activity_comparison) {
+            html += `
+                <h5 class="mt-3">Activity Comparison</h5>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Repository</th>
+                                <th>Total PRs</th>
+                                <th>Avg PRs/Month</th>
+                                <th>Peak Month</th>
+                                <th>Peak Count</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+            
+            Object.entries(data.comparative_analysis.activity_comparison).forEach(([repo, stats]) => {
+                html += `
+                    <tr>
+                        <td><strong>${repo}</strong></td>
+                        <td>${stats.total_prs || 0}</td>
+                        <td>${(stats.avg_prs_per_month || 0).toFixed(2)}</td>
+                        <td>${stats.peak_month || 'N/A'}</td>
+                        <td>${stats.peak_count || 0}</td>
+                    </tr>
+                `;
+            });
+            
+            html += `
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+        
+        if (data.comparative_analysis.quality_metrics) {
+            html += `
+                <h5 class="mt-3">Quality Metrics Comparison</h5>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Repository</th>
+                                <th>Merge Rate (%)</th>
+                                <th>Avg Comments</th>
+                                <th>Avg Review Comments</th>
+                                <th>Avg Time to Merge (h)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+            
+            Object.entries(data.comparative_analysis.quality_metrics).forEach(([repo, metrics]) => {
+                html += `
+                    <tr>
+                        <td><strong>${repo}</strong></td>
+                        <td>${(metrics.merge_rate || 0).toFixed(2)}%</td>
+                        <td>${(metrics.avg_comments || 0).toFixed(2)}</td>
+                        <td>${(metrics.avg_review_comments || 0).toFixed(2)}</td>
+                        <td>${(metrics.avg_time_to_merge || 0).toFixed(2)}</td>
+                    </tr>
+                `;
+            });
+            
+            html += `
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+        
+        html += `</div>`;
+    }
+    
+    // Trends section
+    if (data.trends) {
+        html += `
+            <div class="mb-4">
+                <h4><i class="fas fa-trending-up me-2"></i>Trends Analysis</h4>
+                <div class="card">
+                    <div class="card-body">
+                        <pre class="bg-light p-3 rounded">${JSON.stringify(data.trends, null, 2)}</pre>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    // Contributor stats section
+    if (data.contributor_stats) {
+        html += `
+            <div class="mb-4">
+                <h4><i class="fas fa-users me-2"></i>Contributor Statistics</h4>
+                <p><strong>Total Contributors:</strong> ${data.contributor_stats.total_contributors || 0}</p>
+                
+                ${data.contributor_stats.top_contributors ? `
+                <h5>Top Contributors</h5>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Rank</th>
+                                <th>Contributor</th>
+                                <th>PR Count</th>
+                                <th>Merged</th>
+                                <th>Total Comments</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                ` : ''}
+                
+                ${data.contributor_stats.top_contributors ? 
+                    data.contributor_stats.top_contributors.map((contributor, index) => `
+                        <tr>
+                            <td>${index + 1}</td>
+                            <td>${contributor[0]}</td>
+                            <td>${contributor[1].pr_count || 0}</td>
+                            <td>${contributor[1].merged_count || 0}</td>
+                            <td>${contributor[1].total_comments || 0}</td>
+                        </tr>
+                    `).join('') : ''
+                }
+                
+                ${data.contributor_stats.top_contributors ? `
+                        </tbody>
+                    </table>
+                </div>
+                ` : ''}
+            </div>
+        `;
+    }
+    
+    container.innerHTML = html;
+}
+
+function loadCharts(filename) {
+    const modal = document.getElementById('chartsModal');
+    const container = document.getElementById('chartsContainer');
+    
+    // Show loading state
+    container.innerHTML = '<div class="text-center py-5"><div class="loading"></div><p class="mt-3">Loading charts...</p></div>';
+    
+    // Show modal first
+    const bootstrapModal = new bootstrap.Modal(modal);
+    bootstrapModal.show();
+    
+    // Fetch chart data
+    fetch(`/api/charts/${filename}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Chart data received:', data);
+            
+            if (data.error) {
+                throw new Error(data.error);
+            }
+            
+            container.innerHTML = '';
+            
+            if (Object.keys(data).length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-5">
+                        <i class="fas fa-chart-bar text-muted display-4 mb-3"></i>
+                        <h5>No Charts Available</h5>
+                        <p class="text-muted">No chart data found for this report.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            Object.keys(data).forEach(chartKey => {
+                console.log(`Creating chart: ${chartKey}`);
+                const chartDiv = document.createElement('div');
+                chartDiv.className = 'mb-4';
+                chartDiv.id = `chart-${chartKey}`;
+                container.appendChild(chartDiv);
+                
+                try {
+                    Plotly.newPlot(`chart-${chartKey}`, data[chartKey].data, data[chartKey].layout);
+                    console.log(`Chart ${chartKey} created successfully`);
+                } catch (chartError) {
+                    console.error(`Error creating chart ${chartKey}:`, chartError);
+                    chartDiv.innerHTML = `
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            Error creating chart: ${chartKey}
+                        </div>
+                    `;
+                }
+            });
+        })
+        .catch(error => {
+            console.error('Error loading charts:', error);
+            container.innerHTML = `
+                <div class="text-center py-5">
+                    <i class="fas fa-exclamation-triangle text-warning display-4 mb-3"></i>
+                    <h5>Error Loading Charts</h5>
+                    <p class="text-muted">${error.message}</p>
+                    <button class="btn btn-primary" onclick="loadCharts('${filename}')">
+                        <i class="fas fa-redo me-1"></i>Retry
+                    </button>
+                </div>
+            `;
+        });
+}
+
+function exportData(type, filename) {
+    fetch(`/api/report/${filename}`)
+        .then(response => response.json())
+        .then(data => {
+            const dataStr = JSON.stringify(data, null, 2);
+            const dataBlob = new Blob([dataStr], {type: 'application/json'});
+            
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(dataBlob);
+            link.download = `${type}_${filename}_${new Date().toISOString().split('T')[0]}.json`;
+            link.click();
+        })
+        .catch(error => {
+            console.error('Error exporting data:', error);
+            alert('Error exporting data');
+        });
+}
+</script>
+{% endblock %} 

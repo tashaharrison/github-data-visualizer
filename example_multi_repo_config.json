@@ -1,0 +1,26 @@
+{
+  "repositories": [
+    {
+      "owner": "your_organization",
+      "name": "frontend-app",
+      "display_name": "Frontend Application"
+    },
+    {
+      "owner": "your_organization", 
+      "name": "backend-api",
+      "display_name": "Backend API"
+    },
+    {
+      "owner": "your_organization",
+      "name": "mobile-app",
+      "display_name": "Mobile Application"
+    },
+    {
+      "owner": "your_organization",
+      "name": "shared-libraries",
+      "display_name": "Shared Libraries"
+    }
+  ],
+  "analysis_year": 2025,
+  "enable_comparative_analysis": true
+} 
